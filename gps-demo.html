@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Vehicle GPS Demo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body { font-family: Arial, sans-serif; padding: 16px; }
+    button { padding: 12px; font-size: 16px; margin-right: 10px; }
+    #log { margin-top: 15px; font-size: 14px; white-space: pre-line; }
+  </style>
+</head>
+<body>
+
+<h2>📡 Vehicle GPS Demo</h2>
+
+<p><b>Vehicle ID:</b><br>
+<input id="vehicleId" style="width:100%" value="9197dd05-5b2f-4c4b-b9e4-b6aff639db18">
+</p>
+
+<button onclick="startTrip()">▶ Start Trip</button>
+<button onclick="stopTrip()">⏹ Stop Trip</button>
+
+<div id="log">Idle…</div>
+
+<script>
+const SUPABASE_URL = "https://gfvbgzoqglqqttbrlxiu.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmdmJnem9xZ2xxcXR0YnJseGl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA0OTY1OTUsImV4cCI6MjA4NjA3MjU5NX0.DSkCoU0bHvSI7uGssPm_OVCH5fGyJ8FjCMKqJvZwSdk";
+const VEHICLE_ID = "9197dd05-5b2f-4c4b-b9e4-b6aff639db18";
+
+let watchId = null;
+
+function log(msg) {
+  document.getElementById("log").innerText = msg;
+}
+
+async function startTrip() {
+  const vehicleId = document.getElementById("vehicleId").value;
+
+  await fetch(`${SUPABASE_URL}/rest/v1/rpc/open_trip`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ p_vehicle_id: vehicleId })
+  });
+
+  log("Tracking started… waiting for GPS");
+
+  watchId = navigator.geolocation.watchPosition(
+    sendPosition,
+    err => log("GPS error: " + err.message),
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
+  );
+}
+
+async function sendPosition(pos) {
+  const vehicleId = document.getElementById("vehicleId").value;
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
+  const acc = pos.coords.accuracy;
+
+  await fetch(`${SUPABASE_URL}/rest/v1/positions`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      vehicle_id: vehicleId,
+      latitude: lat,
+      longitude: lng,
+      ignition: true
+    })
+  });
+
+  log(`Sent:
+Lat: ${lat.toFixed(6)}
+Lng: ${lng.toFixed(6)}
+Accuracy: ${Math.round(acc)} m`);
+}
+
+async function stopTrip() {
+  if (watchId) navigator.geolocation.clearWatch(watchId);
+
+  const vehicleId = document.getElementById("vehicleId").value;
+
+  await fetch(`${SUPABASE_URL}/rest/v1/rpc/close_active_trip`, {
+    method: "POST",
+    headers: {
+      "apikey": SUPABASE_KEY,
+      "Authorization": `Bearer ${SUPABASE_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      p_vehicle_id: vehicleId,
+      p_reason: "manual"
+    })
+  });
+
+  log("Trip stopped and closed.");
+}
+</script>
+
+</body>
+</html>
