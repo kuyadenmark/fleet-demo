@@ -1,211 +1,146 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>Vehicle GPS Demo</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <title>GPS Live Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
   <style>
     body {
       font-family: Arial, sans-serif;
-      padding: 16px;
-      background: #f7f7f7;
-    }
-    h2 {
-      margin-bottom: 10px;
-    }
-    input {
-      width: 100%;
-      padding: 10px;
-      font-size: 16px;
-      margin-bottom: 10px;
+      padding: 15px;
+      background: #f5f5f5;
     }
     button {
-      padding: 12px;
+      padding: 10px 15px;
+      margin: 5px 0;
       font-size: 16px;
-      margin-right: 10px;
-      margin-top: 5px;
     }
     #log {
-      margin-top: 15px;
-      font-size: 14px;
-      white-space: pre-line;
+      margin-top: 10px;
       background: #fff;
       padding: 10px;
-      border-radius: 6px;
+      height: 200px;
+      overflow-y: auto;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
 
-<h2>📡 Vehicle GPS Demo</h2>
+  <h2>🚗 GPS Live Tracking</h2>
 
-<p><b>Vehicle ID:</b></p>
-<input id="vehicleId" value="9197dd05-5b2f-4c4b-b9e4-b6aff639db18">
+  <button onclick="startTracking()">▶️ Start Tracking</button><br />
+  <button onclick="stopTracking()">⛔ Stop Tracking</button>
 
-<button onclick="startTrip()">▶ Start Trip</button>
-<button onclick="stopTrip()">⏹ Stop Trip</button>
+  <div id="log"></div>
 
-<div id="log">Idle…</div>
+  <script>
+    /* ===============================
+       🔐 SUPABASE CONFIG
+       =============================== */
+    const SUPABASE_URL = "YOUR_SUPABASE_URL";
+    const SUPABASE_KEY = "YOUR_SUPABASE_ANON_KEY";
 
-<script>
-/* =======================
-   CONFIG
-======================= */
-const SUPABASE_URL = "https://gfvbgzoqglqqttbrlxiu.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmdmJnem9xZ2xxcXR0YnJseGl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA0OTY1OTUsImV4cCI6MjA4NjA3MjU5NX0.DSkCoU0bHvSI7uGssPm_OVCH5fGyJ8FjCMKqJvZwSdk";
-
-/* =======================
-   STATE
-======================= */
-let watchId = null;
-let lastLat = null;
-let lastLng = null;
-
-/* =======================
-   HELPERS
-======================= */
-function log(msg) {
-  document.getElementById("log").innerText = msg;
-}
-
-/* =======================
-   GPS PERMISSION CHECK
-======================= */
-async function checkPermission() {
-  if (!navigator.geolocation) {
-    log("❌ Geolocation not supported");
-    return false;
-  }
-
-  return new Promise((resolve) => {
-    navigator.geolocation.getCurrentPosition(
-      () => resolve(true),
-      (err) => {
-        if (err.code === 1) {
-          log("❌ Location permission denied");
-        } else if (err.code === 2) {
-          log("❌ GPS unavailable");
-        } else {
-          log("❌ GPS timeout");
-        }
-        resolve(false);
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
+    const supabase = supabase.createClient(
+      SUPABASE_URL,
+      SUPABASE_KEY
     );
-  });
-}
 
-/* =======================
-   START TRIP
-======================= */
-async function startTrip() {
-  const ok = await checkPermission();
-  if (!ok) return;
+    /* ===============================
+       📡 STATE
+       =============================== */
+    let watchId = null;
+    let ignition = false;
+    let lastRowId = null;
 
-  const vehicleId = document.getElementById("vehicleId").value;
+    const logBox = document.getElementById("log");
 
-  // Open trip (optional RPC)
-  await fetch(`${SUPABASE_URL}/rest/v1/rpc/open_trip`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({ p_vehicle_id: vehicleId })
-  });
+    function log(msg) {
+      const p = document.createElement("div");
+      p.textContent = new Date().toLocaleTimeString() + " - " + msg;
+      logBox.prepend(p);
+    }
 
-  log("✅ Tracking started… waiting for GPS");
+    /* ===============================
+       ▶️ START TRACKING
+       =============================== */
+    async function startTracking() {
+      if (!navigator.geolocation) {
+        alert("Geolocation not supported");
+        return;
+      }
 
-  watchId = navigator.geolocation.watchPosition(
-    sendPosition,
-    (err) => log("❌ GPS error: " + err.message),
-    { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
-  );
-}
+      ignition = true;
+      log("🟢 Ignition ON");
 
-/* =======================
-   SEND GPS POSITION
-======================= */
-async function sendPosition(pos) {
-  const vehicleId = document.getElementById("vehicleId").value;
+      watchId = navigator.geolocation.watchPosition(
+        sendPosition,
+        err => log("❌ GPS error: " + err.message),
+        {
+          enableHighAccuracy: true,
+          maximumAge: 1000,
+          timeout: 20000
+        }
+      );
+    }
 
-  lastLat = pos.coords.latitude;
-  lastLng = pos.coords.longitude;
+    /* ===============================
+       ⛔ STOP TRACKING
+       =============================== */
+    async function stopTracking() {
+      ignition = false;
+      log("🔴 Ignition OFF");
 
-  const data = {
-    vehicle_id: vehicleId,
-    latitude: lastLat,
-    longitude: lastLng,
-    ignition: true
-  };
+      if (watchId !== null) {
+        navigator.geolocation.clearWatch(watchId);
+        watchId = null;
+      }
 
-  await fetch(`${SUPABASE_URL}/rest/v1/positions`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(data)
-  });
+      if (lastRowId) {
+        await supabase
+          .from("gps_logs")
+          .update({ ignition: false })
+          .eq("id", lastRowId);
+      }
+    }
 
-  log(
-`📍 GPS SENT
-Lat: ${lastLat.toFixed(6)}
-Lng: ${lastLng.toFixed(6)}
-Accuracy: ${Math.round(pos.coords.accuracy)} m
-Ignition: ON`
-  );
-}
+    /* ===============================
+       📍 SEND GPS TO SUPABASE
+       =============================== */
+    async function sendPosition(position) {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      const speed = position.coords.speed || 0;
+      const accuracy = position.coords.accuracy;
 
-/* =======================
-   STOP TRIP (IGNITION OFF)
-======================= */
-async function stopTrip() {
-  if (watchId) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
-  }
+      log(`📍 ${lat.toFixed(5)}, ${lng.toFixed(5)} | ${accuracy}m`);
 
-  const vehicleId = document.getElementById("vehicleId").value;
+      const { data, error } = await supabase
+        .from("gps_logs")
+        .insert([
+          {
+            latitude: lat,
+            longitude: lng,
+            speed: speed,
+            ignition: ignition,
+            created_at: new Date().toISOString()
+          }
+        ])
+        .select()
+        .single();
 
-  // 🔴 SEND FINAL POSITION WITH IGNITION OFF
-  if (lastLat !== null && lastLng !== null) {
-    await fetch(`${SUPABASE_URL}/rest/v1/positions`, {
-      method: "POST",
-      headers: {
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${SUPABASE_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        vehicle_id: vehicleId,
-        latitude: lastLat,
-        longitude: lastLng,
-        ignition: false
-      })
-    });
-  }
-
-  // Close trip (optional RPC)
-  await fetch(`${SUPABASE_URL}/rest/v1/rpc/close_active_trip`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_KEY,
-      Authorization: `Bearer ${SUPABASE_KEY}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      p_vehicle_id: vehicleId,
-      p_reason: "manual"
-    })
-  });
-
-  log("⏹ Trip stopped\nIgnition: OFF");
-}
-</script>
+      if (error) {
+        log("❌ DB error");
+      } else {
+        lastRowId = data.id;
+        log("✅ Sent to Supabase");
+      }
+    }
+  </script>
 
 </body>
 </html>
