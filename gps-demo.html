@@ -26,8 +26,7 @@
 
 <script>
 const SUPABASE_URL = "https://gfvbgzoqglqqttbrlxiu.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdmdmJnem9xZ2xxcXR0YnJseGl1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA0OTY1OTUsImV4cCI6MjA4NjA3MjU5NX0.DSkCoU0bHvSI7uGssPm_OVCH5fGyJ8FjCMKqJvZwSdk";
-const VEHICLE_ID = "9197dd05-5b2f-4c4b-b9e4-b6aff639db18";
+const SUPABASE_KEY = "YOUR_ANON_KEY_HERE";
 
 let watchId = null;
 
@@ -35,7 +34,35 @@ function log(msg) {
   document.getElementById("log").innerText = msg;
 }
 
+// 🔹 Check GPS permission first
+async function checkPermission() {
+  if (!navigator.geolocation) {
+    log("❌ Geolocation not supported on this device.");
+    return false;
+  }
+
+  return new Promise((resolve) => {
+    navigator.geolocation.getCurrentPosition(
+      () => resolve(true),
+      (err) => {
+        if (err.code === 1) {
+          log("❌ Location permission denied.\nOpen browser settings → Allow location.");
+        } else if (err.code === 2) {
+          log("❌ GPS unavailable. Turn on phone location.");
+        } else {
+          log("❌ GPS timeout. Try again outside.");
+        }
+        resolve(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  });
+}
+
 async function startTrip() {
+  const ok = await checkPermission();
+  if (!ok) return;
+
   const vehicleId = document.getElementById("vehicleId").value;
 
   await fetch(`${SUPABASE_URL}/rest/v1/rpc/open_trip`, {
@@ -48,20 +75,24 @@ async function startTrip() {
     body: JSON.stringify({ p_vehicle_id: vehicleId })
   });
 
-  log("Tracking started… waiting for GPS");
+  log("✅ Tracking started… waiting for GPS");
 
   watchId = navigator.geolocation.watchPosition(
     sendPosition,
-    err => log("GPS error: " + err.message),
+    err => log("❌ GPS error: " + err.message),
     { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
   );
 }
 
 async function sendPosition(pos) {
   const vehicleId = document.getElementById("vehicleId").value;
-  const lat = pos.coords.latitude;
-  const lng = pos.coords.longitude;
-  const acc = pos.coords.accuracy;
+
+  const data = {
+    vehicle_id: vehicleId,
+    latitude: pos.coords.latitude,
+    longitude: pos.coords.longitude,
+    ignition: true
+  };
 
   await fetch(`${SUPABASE_URL}/rest/v1/positions`, {
     method: "POST",
@@ -70,18 +101,13 @@ async function sendPosition(pos) {
       "Authorization": `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({
-      vehicle_id: vehicleId,
-      latitude: lat,
-      longitude: lng,
-      ignition: true
-    })
+    body: JSON.stringify(data)
   });
 
-  log(`Sent:
-Lat: ${lat.toFixed(6)}
-Lng: ${lng.toFixed(6)}
-Accuracy: ${Math.round(acc)} m`);
+  log(`📍 Sent:
+Lat: ${data.latitude.toFixed(6)}
+Lng: ${data.longitude.toFixed(6)}
+Accuracy: ${Math.round(pos.coords.accuracy)} m`);
 }
 
 async function stopTrip() {
@@ -102,7 +128,7 @@ async function stopTrip() {
     })
   });
 
-  log("Trip stopped and closed.");
+  log("⏹ Trip stopped and closed.");
 }
 </script>
 
